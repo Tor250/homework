@@ -46,30 +46,30 @@ class HW6RankedIndex:
         lsm_mem_limit: int = 256,
         lsm_auto_flush_docs: int = 200,
     ):
-        self.champion_size = champion_size
-        self.tier_size = tier_size
+        self.champion_size = champion_size # размер чемпион-листа
+        self.tier_size = tier_size # размер каждого уровня в иерархической структуре
 
-        self.docs = {}
-        self.doc_tokens = {}
-        self.doc_lengths = {}
-        self.postings = defaultdict(dict)
-        self.doc_count = 0
+        self.docs = {} # doc_id -> текст документа
+        self.doc_tokens = {} # doc_id -> список токенов документа
+        self.doc_lengths = {} # doc_id -> количество токенов в документе
+        self.postings = defaultdict(dict) # term -> dict of doc_id -> tf (частота терма в документе)
+        self.doc_count = 0 # общее количество документов в индексе
 
-        self.df = {}
-        self.idf = {}
-        self.term_weights = {}
-        self.doc_norms = {}
-        self.sorted_postings = {}
-        self.champion_lists = {}
-        self.tiered_postings = {}
-        self._stats_dirty = True
-        self.use_lsm = use_lsm
-        self.lsm_path = lsm_path
-        self.lsm_auto_flush_docs = lsm_auto_flush_docs
-        self._dirty_terms = set()
-        self._dirty_docs = set()
-        self._docs_since_flush = 0
-        self.lsm = None
+        self.df = {} # term -> document frequency (количество документов, содержащих терм)
+        self.idf = {} # term -> inverse document frequency (логарифм отношения общего количества документов к количеству документов с термом)
+        self.term_weights = {} # term -> dict of doc_id -> weight (вес терма в документе, например, TF-IDF)
+        self.doc_norms = {} # doc_id -> норма вектора документа (для косинусного ранжирования)
+        self.sorted_postings = {} # term -> список (doc_id, weight) для всех документов с термом, отсортированный по убыванию веса
+        self.champion_lists = {} # term -> список doc_id для чемпион-листа терма (топ-k документов с наибольшим весом для терма)
+        self.tiered_postings = {} # term -> dict of tier_name -> список doc_id для каждого уровня иерархической структуры (например, "hot", "warm", "cold")
+        self._stats_dirty = True # флаг, указывающий, что статистика (df, idf, term_weights, doc_norms, sorted_postings, champion_lists, tiered_postings) устарела и требует обновления
+        self.use_lsm = use_lsm # флаг, указывающий, использовать ли LSM-дерево для хранения данных на диске
+        self.lsm_path = lsm_path # путь к директории для хранения данных LSM-дерева
+        self.lsm_auto_flush_docs = lsm_auto_flush_docs # количество добавленных документов, после которого автоматически вызывается flush() для сохранения данных в LSM-дерево
+        self._dirty_terms = set() # множество термов, для которых были изменены постинг-листы и которые требуют сохранения в LSM-дереве при flush()
+        self._dirty_docs = set() # множество doc_id документов, которые были добавлены или изменены и требуют сохранения в LSM-дереве при flush()
+        self._docs_since_flush = 0 # счетчик добавленных документов с последнего flush()
+        self.lsm = None # экземпляр LSM-дерева для хранения данных на диске, если use_lsm=True
 
         if self.use_lsm:
             if clear_on_init:
@@ -116,7 +116,7 @@ class HW6RankedIndex:
             decoded[doc_id] = tf_raw
         return decoded
 
-    def _load_from_lsm(self):
+    def _load_from_lsm(self): # загружает данные из LSM-дерева в память при инициализации, восстанавливая документы, постинг-листы и статистику, и устанавливает doc_count на основе сохраненных данных
         if self.lsm is None:
             return
 
@@ -174,12 +174,12 @@ class HW6RankedIndex:
         self._stats_dirty = True
 
     @staticmethod
-    def _tf_weight(tf: int) -> float:
+    def _tf_weight(tf: int) -> float: # преобразует частоту терма в документе (tf) в вес терма
         if tf <= 0:
             return 0.0
         return 1.0 + math.log(tf)
 
-    def flush(self):
+    def flush(self): # сохраняет измененные документы и постинг-листы в LSM-дерево, если use_lsm=True, и обновляет doc_count в метаданных, а также очищает множества _dirty_terms и _dirty_docs и сбрасывает счетчик _docs_since_flush
         if not self.use_lsm:
             return
         if self.lsm is None:
@@ -204,7 +204,7 @@ class HW6RankedIndex:
             self.flush()
             self.lsm.close()
 
-    def add_document(self, text: str):
+    def add_document(self, text: str): # добавляет новый документ в индекс, обновляя словарь документов, постинг-листы, статистику и устанавливая флаги грязных данных для последующего сохранения в LSM-дереве при flush()
         doc_id = self.doc_count
         self.doc_count += 1
 
@@ -228,7 +228,7 @@ class HW6RankedIndex:
                 self.flush()
         return doc_id
 
-    def _ensure_statistics(self):
+    def _ensure_statistics(self): # проверяет флаг _stats_dirty и, если он установлен, пересчитывает статистику (df, idf, term_weights, doc_norms, sorted_postings, champion_lists, tiered_postings) на основе текущих данных в self.postings и self.docs, и затем сбрасывает флаг _stats_dirty
         if not self._stats_dirty:
             return
 
@@ -270,7 +270,7 @@ class HW6RankedIndex:
 
         self._stats_dirty = False
 
-    def _query_weights(self, query: str):
+    def _query_weights(self, query: str): # принимает строку запроса, токенизирует ее, удаляет стоп-слова и применяет стемминг, а затем для каждого терма в запросе вычисляет вес (например, TF-IDF) на основе статистики индекса, возвращая словарь term -> weight для термов в запросе
         terms = tokenize(query, remove_stopwords=True)
         if not terms:
             return terms, {}
@@ -311,19 +311,19 @@ class HW6RankedIndex:
 
         return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
 
-    def search_tfidf(self, query: str, top_k: int = 10):
+    def search_tfidf(self, query: str, top_k: int = 10): # выполняет поиск по TF-IDF, возвращая список doc_id для топ-k документов с наивысшими оценками релевантности для данного запроса, используя точный поиск по всем документам
         _, query_weights = self._query_weights(query)
         if not query_weights:
             return []
         return self._score_candidates(query_weights, cosine=False)[:top_k]
 
-    def search_vector(self, query: str, top_k: int = 10):
+    def search_vector(self, query: str, top_k: int = 10): # выполняет поиск по векторной модели, возвращая список doc_id для топ-k документов с наивысшими оценками релевантности для данного запроса, используя косинусное ранжирование
         _, query_weights = self._query_weights(query)
         if not query_weights:
             return []
         return self._score_candidates(query_weights, cosine=True)[:top_k]
 
-    def _collect_inexact_candidates(self, query_terms, top_k: int):
+    def _collect_inexact_candidates(self, query_terms, top_k: int): # для данного списка термов в запросе и количества top_k, собирает множество candidate_docs, сначала добавляя документы из чемпион-листов для термов, затем из следующих уровней иерархической структуры, пока не будет собрано достаточно кандидатов (например, target_size = max(top_k * 3, champion_size + tier_size)), и возвращает множество candidate_docs для последующего оценивания
         self._ensure_statistics()
         candidates = set()
         for term in query_terms:
@@ -346,7 +346,7 @@ class HW6RankedIndex:
                 break
         return candidates
 
-    def search_inexact_top_k(self, query: str, top_k: int = 10, model: str = "vector"):
+    def search_inexact_top_k(self, query: str, top_k: int = 10, model: str = "vector"): # выполняет приближенный топ-k поиск, сначала собирая кандидатов из чемпион-листов и уровней иерархической структуры для термов в запросе, а затем оценивая их с помощью TF-IDF или косинусного ранжирования (в зависимости от параметра model), и возвращая список doc_id для топ-k документов с наивысшими оценками релевантности для данного запроса
         query_terms, query_weights = self._query_weights(query)
         if not query_weights:
             return []

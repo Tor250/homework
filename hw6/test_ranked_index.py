@@ -8,7 +8,7 @@ import pytest
 from hw6.ranked_index import HW6RankedIndex, tokenize
 
 
-def _doc_ids(results):
+def _doc_ids(results): # извлекает список doc_id из результатов поиска, игнорируя оценки релевантности
     return [doc_id for doc_id, _ in results]
 
 
@@ -27,7 +27,7 @@ def _make_index(champion_size=8, tier_size=8):
     )
 
 
-def _manual_rank(docs, query, cosine=False):
+def _manual_rank(docs, query, cosine=False): # выполняет ручной расчет TF-IDF и косинусного сходства для заданного списка документов и запроса, возвращая отсортированный список (doc_id, score) для всех документов, где score > 0
     doc_counters = []
     df = Counter()
     for text in docs:
@@ -78,14 +78,14 @@ def _manual_rank(docs, query, cosine=False):
     return sorted(scores, key=lambda item: (-item[1], item[0]))
 
 
-def _assert_rankings_close(actual, expected, top_k):
+def _assert_rankings_close(actual, expected, top_k): # проверяет, что два списка (doc_id, score) совпадают по doc_id в топ-k и что оценки релевантности примерно равны для этих документов
     assert _doc_ids(actual[:top_k]) == _doc_ids(expected[:top_k])
     for (actual_doc, actual_score), (expected_doc, expected_score) in zip(actual[:top_k], expected[:top_k]):
         assert actual_doc == expected_doc
         assert actual_score == pytest.approx(expected_score, rel=1e-9, abs=1e-9)
 
 
-def test_tfidf_prefers_higher_term_frequency():
+def test_tfidf_prefers_higher_term_frequency(): # проверяет, что документы с более высокой частотой термов получают более высокие оценки релевантности при поиске по TF-IDF
     idx = _make_index(champion_size=3, tier_size=3)
     idx.add_document("python ranking basics")
     idx.add_document("python python ranking ranking ranking")
@@ -95,7 +95,7 @@ def test_tfidf_prefers_higher_term_frequency():
     assert _doc_ids(result)[:2] == [1, 0]
 
 
-def test_vector_space_penalizes_longer_document():
+def test_vector_space_penalizes_longer_document(): # проверяет, что более длинные документы получают более низкие оценки релевантности при поиске в пространстве векторов
     idx = _make_index(champion_size=3, tier_size=3)
     idx.add_document("python ranking")
     idx.add_document("python ranking search engine tfidf cosine lsm bloom filter storage")
@@ -105,7 +105,7 @@ def test_vector_space_penalizes_longer_document():
     assert _doc_ids(result)[:2] == [0, 1]
 
 
-def test_exact_scores_match_manual_reference():
+def test_exact_scores_match_manual_reference(): # проверяет, что оценки релевантности, возвращаемые поиском по TF-IDF и векторному пространству, совпадают с ручным расчетом для небольшого набора документов и запроса
     docs = [
         "alpha beta beta",
         "alpha alpha beta gamma",
@@ -124,7 +124,7 @@ def test_exact_scores_match_manual_reference():
     _assert_rankings_close(idx.search_vector(query, top_k=4), expected_vector, top_k=4)
 
 
-def test_champion_lists_and_tiers_are_built_correctly():
+def test_champion_lists_and_tiers_are_built_correctly(): # проверяет, что для терма с разной частотой в документах формируются правильные чемпион-листы и уровни в иерархической структуре, и что эти структуры обновляются при добавлении новых документов
     idx = _make_index(champion_size=2, tier_size=2)
     idx.add_document("alpha alpha alpha alpha alpha")
     idx.add_document("alpha alpha alpha alpha")
@@ -143,7 +143,7 @@ def test_champion_lists_and_tiers_are_built_correctly():
     assert idx.tiered_postings["alpha"]["cold"] == [4]
 
 
-def test_tiered_candidate_expansion_reaches_all_stages():
+def test_tiered_candidate_expansion_reaches_all_stages(): # проверяет, что при сборе кандидатов для топ-k запросов с помощью иерархической структуры, сначала возвращаются документы из чемпион-листа, затем из горячего уровня, затем из теплого, и так далее, пока не будет достигнуто необходимое количество кандидатов
     idx = _make_index(champion_size=1, tier_size=1)
     idx.add_document("alpha alpha alpha alpha alpha")
     idx.add_document("alpha alpha alpha alpha")
@@ -158,7 +158,7 @@ def test_tiered_candidate_expansion_reaches_all_stages():
     assert idx._collect_inexact_candidates(["alpha"], top_k=4) == {0, 1, 2, 3, 4}
 
 
-def test_inexact_top_k_matches_exact_head_for_vector_and_tfidf():
+def test_inexact_top_k_matches_exact_head_for_vector_and_tfidf(): # проверяет, что приближенный топ-k поиск возвращает те же самые документы в топе, что и точный поиск, для обоих моделей TF-IDF и векторного пространства, на небольшом наборе документов и запросов
     idx = _make_index(champion_size=4, tier_size=4)
     docs = [
         "python search ranking tfidf cosine",
@@ -182,7 +182,7 @@ def test_inexact_top_k_matches_exact_head_for_vector_and_tfidf():
     assert _doc_ids(approx_tfidf)[0] == _doc_ids(exact_tfidf)[0]
 
 
-def test_statistics_refresh_after_new_documents():
+def test_statistics_refresh_after_new_documents(): # проверяет, что после добавления новых документов и обновления статистики, поиск по TF-IDF возвращает правильные результаты с учетом новых данных, и что чемпион-листы обновляются соответственно
     idx = _make_index(champion_size=2, tier_size=2)
     idx.add_document("alpha beta")
     idx.add_document("alpha alpha")
@@ -197,7 +197,7 @@ def test_statistics_refresh_after_new_documents():
     assert idx.champion_lists["alpha"][0] == 2
 
 
-def test_stopwords_and_stemming():
+def test_stopwords_and_stemming(): # проверяет, что стоп-слова и стемминг применяются при поиске по TF-IDF и векторному пространству, и что возвращаются правильные документы и оценки релевантности для разных форм слова и с учетом стоп-слов
     idx = _make_index(champion_size=3, tier_size=3)
     idx.add_document("the running code and the runner")
     idx.add_document("runs faster")
@@ -206,7 +206,7 @@ def test_stopwords_and_stemming():
     assert idx.search_tfidf("the and", top_k=5) == []
 
 
-def test_unknown_query_returns_empty():
+def test_unknown_query_returns_empty(): # проверяет, что поиск по TF-IDF, векторному пространству и приближенный топ-k поиск возвращают пустой результат для запроса, который не содержит известных термов
     idx = _make_index()
     idx.add_document("python ranking")
     assert idx.search_tfidf("unknown-term", top_k=5) == []
@@ -214,7 +214,7 @@ def test_unknown_query_returns_empty():
     assert idx.search_inexact_top_k("unknown-term", top_k=5) == []
 
 
-def test_random_exact_ranking_matches_manual_reference():
+def test_random_exact_ranking_matches_manual_reference(): # проверяет, что точный поиск по TF-IDF и векторному пространству возвращает те же документы и оценки релевантности, что и ручной расчет, на случайных документах и запросах
     rng = random.Random(42)
     docs = []
     idx = _make_index(champion_size=10, tier_size=10)
@@ -249,7 +249,7 @@ def test_random_exact_ranking_matches_manual_reference():
         _assert_rankings_close(actual_vector, expected_vector, top_k=min(5, len(expected_vector)))
 
 
-def test_large_multiquery_inexact_quality():
+def test_large_multiquery_inexact_quality(): # проверяет, что для сложных запросов с несколькими термами, приближенный топ-k поиск возвращает большинство тех же документов в топе, что и точный поиск по векторному пространству, на большом наборе случайных документов
     idx = _make_index(champion_size=32, tier_size=32)
     rng = random.Random(123)
 
@@ -289,7 +289,7 @@ def test_large_multiquery_inexact_quality():
     assert sum(overlaps) / len(overlaps) >= 7.5
 
 
-def test_lsm_persistence_roundtrip():
+def test_lsm_persistence_roundtrip(): # проверяет, что индекс с LSM сохраняет данные при закрытии и загружает их при повторном открытии, и что поиск по TF-IDF и векторному пространству возвращает правильные результаты после перезапуска
     lsm_path = "data/hw6_persistence_lsm"
     _cleanup_lsm(lsm_path)
 

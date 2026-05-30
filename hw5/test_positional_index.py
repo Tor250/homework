@@ -19,7 +19,7 @@ def _make_index():
     )
 
 
-def _naive_phrase_positions(tokens, phrase_terms):
+def _naive_phrase_positions(tokens, phrase_terms): # возвращает список позиций начала фразы в списке токенов документа
     if not phrase_terms:
         return []
     window = len(phrase_terms)
@@ -30,7 +30,7 @@ def _naive_phrase_positions(tokens, phrase_terms):
     return matches
 
 
-def _naive_phrase_search(docs, phrase):
+def _naive_phrase_search(docs, phrase): # возвращает (bitmap, positions_map, counts) для фразы в списке документов, где bitmap - BitMap с doc_id документов, содержащих фразу, positions_map - dict of doc_id -> list of позиций начала фразы в документе, counts - dict of doc_id -> количество вхождений фразы в документ
     phrase_terms = tokenize(phrase, remove_stopwords=False)
     positions = {}
     for doc_id, text in enumerate(docs):
@@ -43,7 +43,7 @@ def _naive_phrase_search(docs, phrase):
     return bitmap, positions, counts
 
 
-def test_basic_phrase_search():
+def test_basic_phrase_search(): # проверяет, что поиск фразы возвращает правильные документы и позиции для простых случаев
     idx = _make_index()
     idx.add_document("new york city is busy")
     idx.add_document("new big york city")
@@ -54,7 +54,7 @@ def test_basic_phrase_search():
     assert idx.phrase_positions("new york") == {0: [0]}
 
 
-def test_phrase_without_post_filtering():
+def test_phrase_without_post_filtering(): # проверяет, что поиск фразы из одного терма возвращает правильные документы и позиции
     idx = _make_index()
     idx.add_document("cat sat on mat")
     idx.add_document("cat on sat mat")
@@ -65,7 +65,7 @@ def test_phrase_without_post_filtering():
     assert idx.search_phrase("cat mat") == BitMap()
 
 
-def test_repeated_term_phrase():
+def test_repeated_term_phrase(): # проверяет, что поиск фразы с повторяющимся термом возвращает правильные документы и позиции
     idx = _make_index()
     idx.add_document("go go go stop")
     idx.add_document("go stop go")
@@ -75,7 +75,7 @@ def test_repeated_term_phrase():
     assert idx.count_phrase_occurrences("go go") == {0: 2}
 
 
-def test_alternating_repeated_phrase_positions():
+def test_alternating_repeated_phrase_positions(): # проверяет, что поиск фразы с чередующимся повторением термов возвращает правильные документы и позиции
     idx = _make_index()
     idx.add_document("alpha beta alpha beta alpha")
     idx.add_document("alpha alpha beta alpha")
@@ -86,7 +86,7 @@ def test_alternating_repeated_phrase_positions():
     assert idx.count_phrase_occurrences("alpha beta alpha") == {0: 2, 1: 1}
 
 
-def test_stopwords_are_preserved_inside_phrase():
+def test_stopwords_are_preserved_inside_phrase(): # проверяет, что стоп-слова сохраняются внутри фразы
     idx = _make_index()
     idx.add_document("the cat in the hat")
     idx.add_document("cat hat")
@@ -96,7 +96,7 @@ def test_stopwords_are_preserved_inside_phrase():
     assert idx.search_phrase("cat in the") == BitMap([0])
 
 
-def test_single_term_phrase_equals_term_query():
+def test_single_term_phrase_equals_term_query(): # проверяет, что поиск фразы из одного терма возвращает те же документы и позиции, что и обычный запрос терма
     idx = _make_index()
     idx.add_document("alpha beta gamma")
     idx.add_document("beta beta alpha")
@@ -106,7 +106,7 @@ def test_single_term_phrase_equals_term_query():
     assert idx.phrase_positions("beta") == {0: [1], 1: [0, 1]}
 
 
-def test_stemming_and_positions():
+def test_stemming_and_positions(): # проверяет, что стемминг применяется при поиске фразы и возвращаются правильные документы и позиции для разных форм слова
     idx = _make_index()
     idx.add_document("running fast and runs fast")
     idx.add_document("runner fast")
@@ -118,7 +118,7 @@ def test_stemming_and_positions():
     assert idx.query_term("runner") == BitMap([1])
 
 
-def test_incremental_build_consistency():
+def test_incremental_build_consistency(): # проверяет, что построение индекса постепенно и добавление документов по одному возвращает правильные результаты на каждом этапе
     idx = _make_index()
     docs = [
         "alpha beta gamma",
@@ -140,7 +140,7 @@ def test_incremental_build_consistency():
         assert idx.search_phrase("alpha beta") == expected
 
 
-def test_phrase_matches_naive_reference_on_random_queries():
+def test_phrase_matches_naive_reference_on_random_queries(): # проверяет, что поиск фразы возвращает те же документы, позиции и количества, что и наивная реализация, на случайных документах и запросах
     rng = random.Random(42)
     idx = _make_index()
     docs = []
@@ -177,7 +177,7 @@ def test_phrase_matches_naive_reference_on_random_queries():
         assert idx.count_phrase_occurrences(query) == expected_counts, f"Counts mismatch for query: {query}"
 
 
-def test_large_phrase_corpus():
+def test_large_phrase_corpus(): # проверяет, что поиск фразы работает на большом количестве документов и возвращает правильные результаты
     idx = _make_index()
     rng = random.Random(123)
     docs = []
@@ -196,7 +196,7 @@ def test_large_phrase_corpus():
     assert idx.count_phrase_occurrences("alpha beta gamma") == expected_counts
 
 
-def test_lsm_persistence_roundtrip():
+def test_lsm_persistence_roundtrip(): # проверяет, что индекс с LSM сохраняет данные при закрытии и загружает их при повторном открытии, и что поиск фразы возвращает правильные результаты после перезапуска
     lsm_path = "data/hw5_persistence_lsm"
     _cleanup_lsm(lsm_path)
 

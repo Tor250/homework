@@ -4,7 +4,7 @@ import time
 from hw6.ranked_index import HW6RankedIndex
 
 
-def benchmark_build(doc_count=12000, doc_len=70):
+def benchmark_build(doc_count=12000, doc_len=70): # проверяет, что построение индекса с заданным количеством документов и средней длиной выполняется за разумное время
     idx = HW6RankedIndex(
         champion_size=16,
         tier_size=16,
@@ -26,7 +26,7 @@ def benchmark_build(doc_count=12000, doc_len=70):
     return idx
 
 
-def benchmark_queries(idx, query_count=1500):
+def benchmark_queries(idx, query_count=1500): # проверяет, что выполнение заданного количества запросов выполняется за разумное время
     queries = []
     for i in range(query_count):
         if i % 4 == 0:

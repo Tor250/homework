@@ -41,20 +41,20 @@ class HW5PositionalIndex:
         use_lsm: bool = True,
         lsm_path: str = "data/hw5_positional_lsm",
         clear_on_init: bool = False,
-        lsm_mem_limit: int = 256,
-        lsm_auto_flush_docs: int = 200,
+        lsm_mem_limit: int = 256, # максимальное количество документов в памяти перед сбросом в LSM
+        lsm_auto_flush_docs: int = 200, # автоматический сброс в LSM после добавления этого количества документов
     ):
-        self.docs = {}
-        self.doc_tokens = {}
-        self.index = defaultdict(lambda: defaultdict(list))
-        self.term_docs = defaultdict(BitMap)
-        self.term_frequencies = defaultdict(Counter)
+        self.docs = {} # doc_id -> text
+        self.doc_tokens = {} # doc_id -> list of tokens
+        self.index = defaultdict(lambda: defaultdict(list)) # term -> doc_id -> list of positions
+        self.term_docs = defaultdict(BitMap) # term -> set of doc_ids
+        self.term_frequencies = defaultdict(Counter) # term -> Counter of doc_ids
         self.doc_count = 0
         self.use_lsm = use_lsm
         self.lsm_path = lsm_path
         self.lsm_auto_flush_docs = lsm_auto_flush_docs
-        self._dirty_terms = set()
-        self._dirty_docs = set()
+        self._dirty_terms = set() # термы, которые были изменены с последнего сброса в LSM
+        self._dirty_docs = set() # doc_ids документов, которые были изменены с последнего сброса в LSM
         self._docs_since_flush = 0
         self.lsm = None
 
@@ -62,27 +62,27 @@ class HW5PositionalIndex:
             if clear_on_init:
                 shutil.rmtree(self.lsm_path, ignore_errors=True)
             self.lsm = LSMTree(path=self.lsm_path, mem_limit=lsm_mem_limit)
-            self._load_from_lsm()
+            self._load_from_lsm() # выгрузка данных из LSM при инициализации, если LSM используется
 
     @staticmethod
-    def _term_key(term: str):
+    def _term_key(term: str): # ключ для хранения позиций терма в LSM, например "t:word"
         return "t:" + term
 
     @staticmethod
-    def _doc_key(doc_id: int):
+    def _doc_key(doc_id: int): # ключ для хранения текста документа в LSM, например "__doc__:123"
         return "__doc__:" + str(doc_id)
 
     @staticmethod
-    def _meta_key():
+    def _meta_key(): # ключ для хранения метаданных, например количества документов, в LSM
         return "__meta__:doc_count"
 
-    def _serialize_positions_map(self, postings):
+    def _serialize_positions_map(self, postings): # принимает dict of doc_id -> list of positions для терма и возвращает blob для сохранения в LSM
         encoded = {}
         for doc_id, positions in postings.items():
             encoded[str(doc_id)] = list(positions)
         return json.dumps(encoded, separators=(",", ":")).encode("utf-8")
 
-    def _deserialize_positions_map(self, blob):
+    def _deserialize_positions_map(self, blob): # возвращает dict of doc_id -> list of positions для терма из blob, полученного из LSM
         if blob is None:
             return {}
         try:
@@ -106,7 +106,7 @@ class HW5PositionalIndex:
             decoded[doc_id] = positions
         return decoded
 
-    def _load_from_lsm(self):
+    def _load_from_lsm(self): # загружает данные из LSM в память при инициализации, если LSM используется
         if self.lsm is None:
             return
 
@@ -163,7 +163,7 @@ class HW5PositionalIndex:
             if max_doc_id >= 0:
                 self.doc_count = max_doc_id + 1
 
-    def flush(self):
+    def flush(self): # сбрасывает все изменения в LSM, если LSM используется
         if not self.use_lsm:
             return
         if self.lsm is None:
@@ -188,7 +188,7 @@ class HW5PositionalIndex:
             self.flush()
             self.lsm.close()
 
-    def add_document(self, text: str):
+    def add_document(self, text: str): # добавляет документ в индекс, возвращает doc_id
         doc_id = self.doc_count
         self.doc_count += 1
         tokens = tokenize(text, remove_stopwords=False)
@@ -211,22 +211,22 @@ class HW5PositionalIndex:
                 self.flush()
         return doc_id
 
-    def _normalize_query_terms(self, query):
+    def _normalize_query_terms(self, query): # возвращает список нормализованных термов из запроса (может принимать строку или список термов)
         if isinstance(query, str):
             return tokenize(query, remove_stopwords=False)
         if not query:
             return []
         return [_normalize_token(term) for term in query if term]
 
-    def get_positions(self, term: str, doc_id: int):
+    def get_positions(self, term: str, doc_id: int): # возвращает позиции терма в документе doc_id
         normalized = _normalize_token(term)
         return list(self.index.get(normalized, {}).get(doc_id, []))
 
-    def query_term(self, term: str):
+    def query_term(self, term: str): # возвращает doc_ids, в которых встречается терм
         normalized = _normalize_token(term)
         return self.term_docs.get(normalized, BitMap()).copy()
 
-    def query_and(self, *terms):
+    def query_and(self, *terms): # возвращает doc_ids, в которых встречаются все терма
         if not terms:
             return BitMap()
         normalized_terms = [_normalize_token(term) for term in terms if term]
@@ -240,7 +240,7 @@ class HW5PositionalIndex:
                 break
         return result
 
-    def _phrase_end_positions(self, doc_id: int, terms):
+    def _phrase_end_positions(self, doc_id: int, terms): # возвращает позиции в документе doc_id, на которых заканчивается фраза terms
         if not terms:
             return []
         if len(terms) == 1:
@@ -274,7 +274,7 @@ class HW5PositionalIndex:
             current_positions = aligned
         return current_positions
 
-    def phrase_positions(self, phrase: str):
+    def phrase_positions(self, phrase: str): # возвращает doc_id -> list of positions, где встречается фраза
         terms = self._normalize_query_terms(phrase)
         if not terms:
             return {}
@@ -288,11 +288,11 @@ class HW5PositionalIndex:
                 result[doc_id] = [pos - start_shift for pos in end_positions]
         return result
 
-    def search_phrase(self, phrase: str):
+    def search_phrase(self, phrase: str): # возвращает doc_id документов, в которых встречается фраза
         matches = BitMap()
         for doc_id in sorted(self.phrase_positions(phrase)):
             matches.add(doc_id)
         return matches
 
-    def count_phrase_occurrences(self, phrase: str):
+    def count_phrase_occurrences(self, phrase: str): # возвращает doc_id -> количество вхождений фразы в документ
         return {doc_id: len(positions) for doc_id, positions in self.phrase_positions(phrase).items()}
